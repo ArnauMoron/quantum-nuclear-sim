@@ -16,8 +16,6 @@ class VQE():
     Attributes:
         method (str): Optimization method.
         test_threshold (float): Threshold to stop the optimization.
-        stop_at_threshold (bool): If True, the optimization stops when the threshold is reached.
-        fcalls (list): List of function calls.
         energy (list): List of energies.
         rel_error (list): List of relative errors.
         success (bool): If True, the optimization was successful.
@@ -33,8 +31,7 @@ class VQE():
                  method: str = 'L-BFGS-B',
                  ftol: float = 1e-7,
                  gtol: float = 1e-3,
-                 rhoend: float = 1e-5,
-                 stop_at_threshold: bool = True) -> None:
+                 rhoend: float = 0.2) -> None:
         """
         Initialization of the VQE object.
 
@@ -44,12 +41,10 @@ class VQE():
             ftol (float): Tolerance for the energy.
             gtol (float): Tolerance for the gradient.
             rhoend (float): Tolerance for the constraints.
-            stop_at_threshold (bool): If True, the optimization stops when the threshold is reached.
         """
         self.method = method
         self.test_threshold = test_threshold
-        self.stop_at_threshold = stop_at_threshold
-        self.fcalls = []
+       
         self.energy = []
         self.rel_error = []
         self.success = False 
@@ -60,12 +55,8 @@ class VQE():
             print('Invalid optimization method, try: SLSQP, COBYLA, L-BFGS-B or BFGS')
             exit()
         self.options={}
-        if self.method in ['SLSQP','L-BFGS-B']:
-            self.options.setdefault('ftol',ftol)
-        if self.method in ['L-BFGS-B','BFGS']:
-            self.options.setdefault('gtol',gtol)
-        if self.method == 'COBYLA':
-            self.options.setdefault('tol',rhoend)
+        
+        self.update_options(ftol=ftol, gtol=gtol, rhoend=rhoend)
 
     def update_options(self,ftol,gtol,rhoend) -> None:
         """Update the optimization options"""
@@ -75,7 +66,7 @@ class VQE():
         if self.method in ['L-BFGS-B','BFGS']:
             self.options['gtol']=gtol
         if self.method == 'COBYLA':
-            self.options['rhoend']=rhoend
+            self.options['rhobeg']=rhoend
 
 class ADAPTVQE(VQE):
     """
@@ -85,10 +76,6 @@ class ADAPTVQE(VQE):
         ansatz (ADAPTAnsatz): ADAPT Ansatz object.
         nucleus (Nucleus): Nucleus object.
         parameters (list): List of parameters.
-        tot_operators (int): Total number of operators.
-        layer_fcalls (list): List of function calls per layer.
-        state_layers (list): List of states per layer.
-        parameter_layers (list): List of parameters per layer.
         max_layers (int): Maximum number of layers.
     
     Methods:
@@ -99,18 +86,13 @@ class ADAPTVQE(VQE):
                  ansatz: ADAPTAnsatz,
                  method: str = 'L-BFGS-B',
                  conv_criterion: str = 'Repeated op',
-                 test_threshold: float = 1e-4,
-                 stop_at_threshold: bool = True,
+                 test_threshold: float = 1e-2,
                  max_layers: int = 100) -> None:
         
-        super().__init__(test_threshold = test_threshold, method = method, stop_at_threshold = stop_at_threshold)
+        super().__init__(test_threshold = test_threshold, method = method)
         self.ansatz = ansatz
         self.nucleus = ansatz.nucleus
         self.parameters = []
-        self.tot_operators = 0
-        self.layer_fcalls = []
-        self.state_layers = []
-        self.parameter_layers = []
         self.max_layers = max_layers
 
         try:
@@ -138,28 +120,28 @@ class ADAPTVQE(VQE):
     
 
         
-        self.ansatz.fcalls = 0
+
         E0 = self.ansatz.energy(self.parameters)
         self.energy.append(E0)
         self.rel_error.append(abs((E0 - self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0]))
-        self.fcalls.append(self.ansatz.fcalls)
-        self.tot_operators+=self.fcalls[-1]*len(self.ansatz.added_operators)
+
         print('Initial Energy: ',E0)
-        next_operator,next_gradient = self.ansatz.choose_operator()
-        
+        self.ansatz.parameters=[]
+        next_operator, next_gradient = self.ansatz.choose_operator()
+        sign = np.sign(next_gradient)
         gradient_layers = []
-        opt_grad_layers = []
+        
         energy_layers = [E0]
         rel_error_layers = [self.rel_error[-1]]
-        fcalls_layers = [self.fcalls[-1]]
-        self.state_layers.append(self.ansatz.ansatz)
+    
+        
+        max_ex = False
+        
         while self.ansatz.minimum == False and len(self.ansatz.added_operators)<self.max_layers:
             self.ansatz.added_operators.append(next_operator)
             gradient_layers.append(next_gradient)
-            self.parameter_layers.append([])
-            self.layer_fcalls.append(self.ansatz.fcalls)
-            self.parameters.append(0.0)
-            self.ansatz.count_fcalls = True
+            self.parameters.append(-sign*np.pi/4)
+            
             try:
                 result = minimize(self.ansatz.energy,
                                   self.parameters,
@@ -168,36 +150,37 @@ class ADAPTVQE(VQE):
                                   options=self.options)
                 self.parameters = list(result.x)
 
+                self.ansatz.parameters = self.parameters
                 
-                if self.method!='COBYLA':
-                    opt_grad= np.linalg.norm(result.jac)
-                else:
-                    opt_grad=0
-                opt_grad_layers.append(opt_grad)
+                if len(self.ansatz.added_operators) < self.max_layers:
+                    
+                    next_operator, next_gradient = self.ansatz.choose_operator()
+                    
+                    sign = np.sign(next_gradient)
+                    
+                        
+                    if next_operator == self.ansatz.added_operators[-1]:
+                        self.ansatz.minimum = True
+                    elif next_gradient < self.test_threshold:
+                        self.ansatz.minimum = True
+                    else:
+                        energy_layers.append(self.energy[-1])
+                        rel_error_layers.append(self.rel_error[-1])
 
-                self.ansatz.count_fcalls = False
-                self.ansatz.ansatz = self.ansatz.build_ansatz(self.parameters)
-                
-                
-                next_operator,next_gradient = self.ansatz.choose_operator()
-                
-                if next_operator == self.ansatz.added_operators[-1]:
-                    self.ansatz.minimum = True
-                if next_gradient < self.test_threshold:
-                    self.ansatz.minimum = True
-                else:
-                    energy_layers.append(self.energy[-1])
-                    rel_error_layers.append(self.rel_error[-1])
-                    fcalls_layers.append(self.fcalls[-1])
                 
             except OptimizationConvergedException:
-                opt_grad_layers.append('Manually stopped')
-            self.state_layers.append(self.ansatz.ansatz)
-            
-            for a in range(len(self.parameters)):
-                self.parameter_layers[a].append(self.parameters[a])      
+                pass
+            except RuntimeError:
+                print('Maximum number of executions reached')
+                max_ex=True
+            except Exception as e:
+                print(e)
+                print('FALLO: ', self.parameters)
+                
+                  
             rel_error = abs((self.energy[-1] - self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0])
-            if rel_error < self.test_threshold or len(self.parameters)==self.max_layers:
+            
+            if rel_error < self.test_threshold or len(self.parameters) == self.max_layers or max_ex==True:
                 self.success = True
                 self.ansatz.minimum = True
                 break
@@ -209,7 +192,7 @@ class ADAPTVQE(VQE):
             
         energy_layers.append(self.energy[-1])
         rel_error_layers.append(self.rel_error[-1])
-        fcalls_layers.append(self.fcalls[-1])
+
         print(f"\n------------ LAYER {len(self.parameters)} ------------")
         print('Operator:',self.ansatz.added_operators[-1].ijkl,', Gradient:', gradient_layers[-1])
         print('Energy: ',energy_layers[-1])
@@ -231,40 +214,35 @@ class ADAPTVQE(VQE):
         
         if self.conv_criterion == 'None' and self.ansatz.minimum == False:
             self.ansatz.minimum = True
-            opt_grad_layers.append('Manually stopped')
-        
+                    
         
         data={'parameters':self.parameters,
             'used_operators':[op for op in self.ansatz.added_operators],
             'operator_pool':self.ansatz.operator_pool,
             'Energy': energy_layers[-1]}
-            
+        
         return data
         
-
     def callback(self, params: list) -> None:
         """
         Callback function to store the energy and parameters at each iteration and stop the optimization if the threshold is reached.
         """
-        self.ansatz.count_fcalls = False
-        E = self.ansatz.energy(params)
-        self.ansatz.count_fcalls = True
+       
+        E = self.ansatz.last_energy
+        
         self.energy.append(E)
         self.rel_error.append(abs((E - self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0]))
-        self.fcalls.append(self.ansatz.fcalls)
-        self.tot_operators+=(self.fcalls[-1]-self.fcalls[-2])*len(self.ansatz.added_operators)
-        self.tot_operations.append(self.tot_operators)
-        if self.rel_error[-1] < self.test_threshold and self.stop_at_threshold:
+        self.parameters = params
+        
+        if self.rel_error[-1] < self.test_threshold:
             self.success = True
             self.ansatz.minimum = True
-            self.parameters = params
             raise OptimizationConvergedException
 
 def ADAPT_minimization(nucleus: str,
                        ref_state: int = 0,
                        opt_method: str = "L-BFGS-B",
                        threshold: float = 1e-6,
-                       stop_at_threshold: bool = True,
                        max_layers: int = 20,
                        n_qubits: int = 6):
 
@@ -277,7 +255,6 @@ def ADAPT_minimization(nucleus: str,
     vqe = ADAPTVQE(ansatz = ansatz,
                    method = opt_method,
                    test_threshold = threshold,
-                   stop_at_threshold = stop_at_threshold,
                    max_layers = max_layers)
 
     
@@ -316,17 +293,17 @@ def ADAPT_minimization(nucleus: str,
     
     data.update(ref_state_dict)
     
-    
+    print('Number of energy measurements:', ansatz.energy_calls)
     return data, nuc
 
 def Quantum_ADAPT_minimization(nucleus: str,
                        ref_state: int = 0,
-                       threshold: float = 1e-6,
-                       stop_at_threshold: bool = True,
+                       threshold: float = 1e-2,
                        max_layers: int = 20,
                        n_qubits: int = 6, 
                        exact: bool = True,
-                       nshots: int = 1000):
+                       nshots: int = 1000,
+                       max_executions: int = 1000):
 
     ref_state_dict = {'ref_state':ref_state}
     nuc = Nucleus(nucleus, n_qubits=n_qubits)
@@ -334,7 +311,8 @@ def Quantum_ADAPT_minimization(nucleus: str,
     ansatz = QuantumADAPTAnsatz(nucleus = nuc,
                                  ref_state = ref_state,
                                  exact = exact,
-                                 nshots = nshots)
+                                 nshots = nshots,
+                                 max_executions=max_executions)
     
     if exact:
         opt = 'L-BFGS-B'
@@ -344,8 +322,7 @@ def Quantum_ADAPT_minimization(nucleus: str,
     vqe = ADAPTVQE(ansatz = ansatz,
                    method = opt,
                    test_threshold = threshold,
-                   stop_at_threshold = stop_at_threshold,
-                   max_layers = max_layers)
+                   max_layers=max_layers)
 
     
     ham = nuc.Ham_2_body_contributions()
@@ -383,7 +360,7 @@ def Quantum_ADAPT_minimization(nucleus: str,
     
     data.update(ref_state_dict)
     
-    
+    print('Number of energy measurements:', ansatz.energy_calls)
     return data, nuc
 
 class ADAPT_mixed_VQE(VQE):
@@ -394,10 +371,6 @@ class ADAPT_mixed_VQE(VQE):
         ansatz (ADAPTAnsatz): ADAPT Ansatz object.
         nucleus (Nucleus): Nucleus object.
         parameters (list): List of parameters.
-        tot_operators (int): Total number of operators.
-        layer_fcalls (list): List of function calls per layer.
-        state_layers (list): List of states per layer.
-        parameter_layers (list): List of parameters per layer.
         max_layers (int): Maximum number of layers.
     
     Methods:
@@ -408,26 +381,22 @@ class ADAPT_mixed_VQE(VQE):
                  data: dict, 
                  ansatz: ADAPT_mixed_Ansatz,
                  method: str = 'COBYLA',
-                 conv_criterion: str = 'Repeated op',
                  test_threshold: float = 1e-4,
-                 stop_at_threshold: bool = True,
                  max_layers: int = 100,
                  exact:bool = True) -> None:
         
-        super().__init__(test_threshold = test_threshold, method = method, stop_at_threshold = stop_at_threshold)
+        super().__init__(test_threshold = test_threshold, method = method)
         self.ansatz = ansatz
         self.nucleus = ansatz.nucleus
         self.parameters = []
-        self.tot_operators = 0
-        self.layer_fcalls = []
-        self.parameter_layers = []
+    
+        
         self.max_layers = max_layers
         self.data = data
         self.exact = exact
         self.operators_used = data['used_operators']
         
-        self.options={}
-
+        
         
     def run(self) -> tuple:
         """
@@ -446,31 +415,30 @@ class ADAPT_mixed_VQE(VQE):
         print(" --------------------------------------------------------------------------\n")
 
 
-        self.ansatz.fcalls = 0
+        
         E0 = self.ansatz.energy(self.parameters)
         self.energy.append(E0)
         self.rel_error.append(abs((E0 - self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0]))
-        self.fcalls.append(self.ansatz.fcalls)
-        self.tot_operators+=self.fcalls[-1]*len(self.ansatz.added_operators)
+        
+        
         print('Initial Energy: ',E0)
         next_operator = self.ansatz.choose_operator()
         
         
         energy_layers = [E0]
         rel_error_layers = [self.rel_error[-1]]
-        fcalls_layers = [self.fcalls[-1]]
+
+        max_ex = False
         
-        
-        while self.ansatz.capas<len(self.operators_used):
+        while self.ansatz.capas<len(self.operators_used) and self.ansatz.capas<self.max_layers:
             
             self.ansatz.capas += 1
             
             self.ansatz.added_operators.append(next_operator)
             
-            self.parameter_layers.append([])
-            self.layer_fcalls.append(self.ansatz.fcalls)
+
             self.parameters.append(0.0)
-            self.ansatz.count_fcalls = True
+            
            
             try:
             
@@ -486,21 +454,21 @@ class ADAPT_mixed_VQE(VQE):
                 if len(self.parameters)<len(self.data['parameters']): 
                     next_operator = self.ansatz.choose_operator()
                     energy_layers.append(self.energy[-1])
-                    rel_error_layers.append(self.rel_error[-1])
-                    fcalls_layers.append(self.fcalls[-1])   
+                    rel_error_layers.append(self.rel_error[-1])  
                 
             except OptimizationConvergedException:
                 pass  
+            except RuntimeError:
+                print('Maximum number of executions reached')
+                max_ex=True 
             except Exception as e:
                 print(e)
                 print('FALLO: ', self.parameters)
                 
-            
-
-            for a in range(len(self.parameters)):
-                self.parameter_layers[a].append(self.parameters[a])      
+               
             rel_error = abs((self.energy[-1] - self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0])
-            if rel_error < self.test_threshold and self.stop_at_threshold:
+            
+            if rel_error < self.test_threshold or max_ex==True:
                 self.success = True
 
                 self.ansatz.minimum = True
@@ -513,28 +481,19 @@ class ADAPT_mixed_VQE(VQE):
 
         energy_layers.append(self.energy[-1])
         rel_error_layers.append(self.rel_error[-1])
-        fcalls_layers.append(self.fcalls[-1])
         print(f"\n------------ LAYER {len(energy_layers)-1} ------------")
         print('Operator:',self.ansatz.added_operators[-1].ijkl)
         print('Energy: ',energy_layers[-1])
         print('Rel. Error: ',rel_error_layers[-1])
         print('New operator: ',self.ansatz.added_operators[-1].ijkl,'    Theta:', self.parameters[-1])
-    
-       
-
-
+           
         print("\nOperators used for each layer:")
-        for i, op in enumerate(self.ansatz.added_operators):
-            print(f"Layer {i}: Operator {op.ijkl}, Theta = {self.parameters[i]}")
-
         
-        
+        for i in range(len(self.parameters)):
+            print(f"Layer {i+1}: Operator {self.ansatz.added_operators[i].ijkl}, Theta = {self.parameters[i]}")
 
         print(f'\n Final energy result: {energy_layers[-1]}\t', f'Final relative error is {self.rel_error[-1]}' )
 
-        
-    
-        
         
         data={'parameters':self.parameters,
             'used_operators':[op.ijkl for op in self.ansatz.added_operators],
@@ -543,49 +502,47 @@ class ADAPT_mixed_VQE(VQE):
             
         return data
         
-
     def callback(self, params: list) -> None:
         """
         Callback function to store the energy and parameters at each iteration and stop the optimization if the threshold is reached.
         """
-        self.ansatz.count_fcalls = False
-        E = self.ansatz.energy(params)
-        self.ansatz.count_fcalls = True
+        
+        E = self.ansatz.last_energy
+        
         self.energy.append(E)
         self.rel_error.append(abs((E - self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0]))
-        self.fcalls.append(self.ansatz.fcalls)
-        self.tot_operators+=(self.fcalls[-1]-self.fcalls[-2])*len(self.ansatz.added_operators)
-        self.tot_operations.append(self.tot_operators)
-        if self.rel_error[-1] < self.test_threshold and self.stop_at_threshold:
+        self.parameters = params
+        
+        if self.rel_error[-1] <= self.test_threshold:
             self.success = True
             self.ansatz.minimum = True
-            self.parameters = params
             raise OptimizationConvergedException
 
 def ADAPT_mixed_minimization(data: dict,
                             nucleus: Nucleus,
                        ref_state: int = 0,
-                       threshold: float = 1e-6,
-                       stop_at_threshold: bool = True,
+                       threshold: float = 1e-2,
                        max_layers: int = 20,
                        exact:bool =True,
-                       nshots:int = 1000):
+                       nshots:int = 1000,
+                       max_executions:int =100):
 
     if exact:
         opt = 'L-BFGS-B'
     else:
         opt = 'COBYLA'
+        
     ansatz = ADAPT_mixed_Ansatz(data = data,
                                 nucleus = nucleus,
                                 ref_state = ref_state,
                                 exact = exact,
-                                nshots = nshots)
+                                nshots = nshots,
+                                max_executions=max_executions)
     
     vqe = ADAPT_mixed_VQE(data = data,
                           ansatz = ansatz,
                           method = opt,
                           test_threshold = threshold,
-                          stop_at_threshold = stop_at_threshold,
                           max_layers = max_layers,
                           exact = exact)
 
@@ -626,5 +583,5 @@ def ADAPT_mixed_minimization(data: dict,
     
     data.update(ref_state_dict)
     
-    
+    print('Number of energy measurements:', ansatz.energy_calls)
     return data, nucleus

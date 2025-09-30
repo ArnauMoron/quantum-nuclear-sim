@@ -80,7 +80,8 @@ class ADAPTAnsatz(Ansatz):
         super().__init__(nucleus, ref_state)
         self.added_operators = []
         self.minimum = False
-        self.E0 = self.energy([])
+        
+        self.energy_calls=0
 
 
     def build_ansatz(self, parameters: list) -> np.ndarray:
@@ -110,14 +111,19 @@ class ADAPTAnsatz(Ansatz):
         Returns:
             float: Energy of the ansatz.
         """
+        
+        self.energy_calls+=1
+        
         if len(parameters) != 0:
             if self.count_fcalls == True:
                 self.fcalls += 1
             new_ansatz = self.build_ansatz(parameters)
             E = new_ansatz.conj().T.dot(self.nucleus.H.dot(new_ansatz))
+            self.last_energy = E
             return E
         else:
             E = self.ansatz.conj().T.dot(self.nucleus.H.dot(self.ansatz))
+            self.last_energy = E
             return E
 
 
@@ -129,11 +135,11 @@ class ADAPTAnsatz(Ansatz):
             TwoBodyExcitationOperator: Next operator.
             float: Gradient of the next operator.
         """
-
+        self.ansatz = self.build_ansatz(self.parameters)
         gradients = []
         sigma = self.nucleus.H.dot(self.ansatz)
-        gradients = [abs(2*(sigma.conj().T.dot(op.matrix.dot(self.ansatz))).real) for op in self.operator_pool]
-        max_gradient = max(gradients)
+        gradients = [(2*(sigma.conj().T.dot(op.matrix.dot(self.ansatz))).real) for op in self.operator_pool]
+        max_gradient = max(gradients, key=abs)
         max_operator = self.operator_pool[gradients.index(max_gradient)]
         
         return max_operator,max_gradient
@@ -161,7 +167,8 @@ class QuantumADAPTAnsatz(Ansatz):
                  nucleus : Nucleus,
                  ref_state : np.ndarray,
                  exact : bool,
-                 nshots : int = 1000 ) -> None:
+                 nshots : int = 1000,
+                 max_executions:int = 1000) -> None:
         """
         Initialization of the ADAPTAnsatz object.
 
@@ -172,47 +179,25 @@ class QuantumADAPTAnsatz(Ansatz):
             operators_list (list): List of operators to be used in the ansatz (optional).
         """
         super().__init__(nucleus, ref_state)
+        self.nucleus = nucleus
         self.added_operators = []
         self.minimum = False
         self.exact = exact
         self.nshots = nshots
-        self.ansatz = None
-        self.E0 = self.energy([])
         
+        self.max_executions=max_executions
+        self.f = io.StringIO()
+        self.energy_calls=0
         
+        self.composer = Circuits_Composser(nucleus=self.nucleus.name,
+                                            n_qubits=self.nucleus.n_qubits,
+                                            ref_state=self.ref_state,
+                                            parameters=[],
+                                            operators_used=[],
+                                            exact=self.exact,
+                                            nshots=self.nshots)
         
-    def build_ansatz(self, parameters: list) -> np.ndarray:
-        """
-        Returns the state of the ansatz on a given VQE iteratioin, after building it with the given paramters and the operators in the pool.
-
-        Args:
-            parameters (list): Values of the parameters of a given VQE iteration.
-
-        """
-        
-        if len(parameters)==0:
-            only_ref=True
-        else:
-            only_ref=False
-            
-        if self.ansatz == None:
-            ansatz=Circuits_Composser(nucleus=self.nucleus.name,
-                                    n_qubits=self.nucleus.n_qubits,
-                                    ref_state=self.ref_state,
-                                    parameters=parameters,
-                                    operators_used=self.added_operators,
-                                    only_ref=only_ref,
-                                    exact=self.exact,
-                                    nshots=self.nshots)
-            
-        else:
-            ansatz = self.ansatz
-            ansatz.only_ref = only_ref
-            ansatz.operators_used = self.added_operators
-            ansatz.parameters = parameters
-            
-
-        return ansatz
+              
         
 
     def energy(self, parameters: list) -> float:
@@ -225,11 +210,21 @@ class QuantumADAPTAnsatz(Ansatz):
         Returns:
             float: Energy of the ansatz.
         """
+         
+        self.energy_calls+=1
         
-        self.ansatz = self.build_ansatz(parameters)
-        f = io.StringIO()
-        with contextlib.redirect_stdout(f):
-            E = self.ansatz.Qibo_measure_Energy()
+        if self.energy_calls>self.max_executions:
+            self.energy_calls = self.max_executions
+            raise RuntimeError
+        
+        self.composer.parameters=parameters
+        self.composer.operators_used=self.added_operators
+        
+        
+        with contextlib.redirect_stdout(self.f):
+            E = self.composer.Qibo_measure_Energy()
+            
+        self.last_energy = E
         
         return E
 
@@ -242,12 +237,13 @@ class QuantumADAPTAnsatz(Ansatz):
             TwoBodyExcitationOperator: Next operator.
             float: Gradient of the next operator.
         """
+        self.energy_calls += 16*len(self.nucleus.operators)
         
-        gradients = [abs(self.ansatz.Qibo_measure_gradient(op.ijkl)) for op in self.operator_pool]
-        max_gradient = max(gradients)
+        gradients = [(self.composer.Qibo_measure_gradient(op.ijkl)) for op in self.operator_pool]
+        max_gradient = max(gradients, key=abs)
         max_operator = self.operator_pool[gradients.index(max_gradient)]
         
-        return max_operator,max_gradient
+        return max_operator, max_gradient
     
 class ADAPT_mixed_Ansatz(Ansatz):
     """
@@ -273,7 +269,8 @@ class ADAPT_mixed_Ansatz(Ansatz):
                  ref_state: np.ndarray, 
                  data: dict,
                  exact:bool=True,
-                 nshots:int = 1000) -> None:
+                 nshots:int = 1000,
+                 max_executions:int = 100) -> None:
         """
         Initialization of the ADAPTAnsatz object.
 
@@ -289,7 +286,9 @@ class ADAPT_mixed_Ansatz(Ansatz):
         self.data=data
         self.exact=exact
         self.nshots=nshots
-        
+        self.max_executions=max_executions
+        self.f = io.StringIO()
+        self.energy_calls=0
         self.ref_state = ref_state
         
         self.composer = Circuits_Composser(nucleus = self.nucleus.name,
@@ -301,7 +300,7 @@ class ADAPT_mixed_Ansatz(Ansatz):
                                   exact = self.exact,
                                   nshots = self.nshots)
         
-        self.E0 = self.energy([])
+        
         self.capas=0
 
     def energy(self, parameters) -> float:
@@ -315,16 +314,22 @@ class ADAPT_mixed_Ansatz(Ansatz):
             float: Energy of the ansatz.
         """
 
+        self.energy_calls+=1
         
-        f = io.StringIO()
+        if self.energy_calls>self.max_executions:
+            self.energy_calls = self.max_executions
+            raise RuntimeError
         
         self.composer.parameters = parameters
+        self.composer.operators_used = self.added_operators
         
         
-        with contextlib.redirect_stdout(f):
-            Et = self.composer.Qibo_measure_Energy()
+        with contextlib.redirect_stdout(self.f):
+            E = self.composer.Qibo_measure_Energy()
+            
+        self.last_energy = E
         
-        return Et
+        return E
 
     def choose_operator(self):
         i=self.capas

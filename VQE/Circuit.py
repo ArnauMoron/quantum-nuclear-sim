@@ -383,9 +383,7 @@ class Circuits_Composser():
             
             result = main_circ.execute(nshots=self.nshots)
 
-            result = MeasurementOutcomes(measurements=result.measurements, backend=result.backend, probabilities=None, samples=result.samples(), nshots=self.nshots)
-            
-            
+            result = MeasurementOutcomes(measurements=result.measurements, backend=result.backend, probabilities=None, samples=result.samples(), nshots=self.nshots)  
         else:
             result=main_circ()
             print(result,'\n')
@@ -401,7 +399,7 @@ class Circuits_Composser():
             
             E_1+=E_i
             
-            if abs(E_i)>10**(-8):
+            if abs(E_i)>10**(-3):
                 print(np.round(E_i,8), '\t\t', i, '\t\t', np.round(eps, 8))
                 
 
@@ -413,7 +411,7 @@ class Circuits_Composser():
             E_i=nu_ij*result.probabilities(ij)[3]       
             E_2_index+=E_i
             
-            if abs(E_i)>10**(-8):
+            if abs(E_i)>10**(-3):
                 print(np.round(E_i,8), '\t\t', op.ijkl, '\t\t', np.round(nu_ij, 8))
     
         
@@ -424,17 +422,16 @@ class Circuits_Composser():
 
         for i in range(1, len(Qibo_circs)):
             circ=Qibo_circs[i][0].copy()
-
+           
                 
             if not self.exact:
                 circ.add([gates.M(i) for i in range(circ.nqubits)])
                 result = circ.execute(nshots=self.nshots)
                 
-                res = MeasurementOutcomes(measurements=result.measurements, backend=result.backend, probabilities=None, samples=result.samples(), nshots=self.nshots)
-                
+                res = MeasurementOutcomes(measurements=result.measurements, backend=result.backend, probabilities=None, samples=result.samples(), nshots=self.nshots)   
             else:   
                 res=circ()
-
+                
             if len(Qibo_circs[i]) == 3: #the data structure for the 4 diferent index just has 3 parameters
                 
                 op_amplitude = (Qibo_circs[i][1])
@@ -465,8 +462,8 @@ class Circuits_Composser():
                     
                     
                 En_4_index += E_ijkl 
-                
-                if abs(E_ijkl)>10**(-8):
+            
+                if abs(E_ijkl)>10**(-3):
                     print(np.round(E_ijkl,8), '\t\t', op_index, '\t\t', np.round(op_amplitude,8))
                     
                     
@@ -508,7 +505,7 @@ class Circuits_Composser():
                         
                     En_3_index += E_njnk
                     
-                    if abs(E_njnk)>10**(-8):
+                    if abs(E_njnk)>10**(-3):
                         print(np.round(E_njnk,8), '\t\t', op_index, '\t\t', np.round(op_amplitude, 8))
                         
 
@@ -530,8 +527,12 @@ class Circuits_Composser():
         for circs in gradient_circs:
             f = io.StringIO()
             with contextlib.redirect_stdout(f):
-                en1 = self.Qibo_measure_Energy(circuits=circs[0])
-                en2 = self.Qibo_measure_Energy(circuits=circs[1])
+                try:
+                    en1 = self.Qibo_measure_Energy(circuits=circs[0])
+                    en2 = self.Qibo_measure_Energy(circuits=circs[1])
+                except:
+                    en1 = 0
+                    en2 = 0
             gradient=gradient+(en1-en2)*circs[2]
 
         return gradient
