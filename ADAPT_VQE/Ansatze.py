@@ -1,7 +1,7 @@
 import numpy as np
-from VQE.Nucleus import Nucleus
+from ADAPT_VQE.Nucleus import Nucleus
 from  scipy.sparse.linalg import expm_multiply
-from VQE.Circuit import Circuits_Composser
+from ADAPT_VQE.Circuit import Circuits_Composser
 
 import io
 import contextlib

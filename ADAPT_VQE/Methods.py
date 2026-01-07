@@ -1,9 +1,9 @@
 from scipy.optimize import minimize
 import numpy as np
 
-from VQE.Nucleus import Nucleus
-from VQE.Ansatze import ADAPTAnsatz, QuantumADAPTAnsatz, ADAPT_mixed_Ansatz
-from VQE.Circuit import Circuits_Composser
+from ADAPT_VQE.Nucleus import Nucleus
+from ADAPT_VQE.Ansatze import ADAPTAnsatz, QuantumADAPTAnsatz, ADAPT_mixed_Ansatz
+
 
 
 class OptimizationConvergedException(Exception):
@@ -128,7 +128,7 @@ class ADAPTVQE(VQE):
         print('Initial Energy: ',E0)
         self.ansatz.parameters=[]
         next_operator, next_gradient = self.ansatz.choose_operator()
-        sign = np.sign(next_gradient)
+
         gradient_layers = []
         
         energy_layers = [E0]
@@ -140,7 +140,7 @@ class ADAPTVQE(VQE):
         while self.ansatz.minimum == False and len(self.ansatz.added_operators)<self.max_layers:
             self.ansatz.added_operators.append(next_operator)
             gradient_layers.append(next_gradient)
-            self.parameters.append(-sign*np.pi/4)
+            self.parameters.append(0.0)
             
             try:
                 result = minimize(self.ansatz.energy,
@@ -161,7 +161,7 @@ class ADAPTVQE(VQE):
                         
                     if next_operator == self.ansatz.added_operators[-1]:
                         self.ansatz.minimum = True
-                    elif next_gradient < self.test_threshold:
+                    elif abs(next_gradient) < self.test_threshold:
                         self.ansatz.minimum = True
                     else:
                         energy_layers.append(self.energy[-1])
@@ -184,6 +184,7 @@ class ADAPTVQE(VQE):
                 self.success = True
                 self.ansatz.minimum = True
                 break
+            
             print(f"\n------------ LAYER {len(energy_layers)-1} ------------")
             print('Operator:',self.ansatz.added_operators[-1].ijkl,', Gradient:', gradient_layers[-1])
             print('Energy: ',energy_layers[-1])
@@ -200,8 +201,6 @@ class ADAPTVQE(VQE):
         print('Theta:', self.parameters[-1])
     
        
-
-
         print("\nOperators used for each layer:")
         for i, op in enumerate(self.ansatz.added_operators):
             print(f"Layer {i}: Operator {op.ijkl}, Theta = {self.parameters[i]}, Gradient = {gradient_layers[i]}")
@@ -249,6 +248,7 @@ def ADAPT_minimization(nucleus: str,
     ref_state_dict = {'ref_state':ref_state}
     nuc = Nucleus(nucleus, n_qubits=n_qubits)
     ref_state = np.eye(nuc.d_H)[ref_state]
+    
     ansatz = ADAPTAnsatz(nucleus = nuc,
                        ref_state = ref_state)
     
@@ -585,3 +585,4 @@ def ADAPT_mixed_minimization(data: dict,
     
     print('Number of energy measurements:', ansatz.energy_calls)
     return data, nucleus
+
