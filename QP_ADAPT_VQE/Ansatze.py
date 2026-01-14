@@ -418,34 +418,47 @@ class QP_Roto_ADAPT_Ansatz(Ansatz):
         parameters = self.parameters
         
         self.energy_calls-=1
+        d = 2 * np.pi / 5.0
+
+        cd = np.cos(d)
+        sd = np.sin(d)
+        c2d = np.cos(2*d)
+        s2d = np.sin(2*d)
+
         E0 = self.energy(parameters+[0], False)
-        
-        E_p2 = self.energy(parameters+[np.pi/2], False)
-            
-        E_p4 = self.energy(parameters+[np.pi/4], False)
-            
-        E_m2 = self.energy(parameters+[-np.pi/2], False)
-            
-        E_m4 = self.energy(parameters+[-np.pi/4], False)
-        
+
+        E_p1 = self.energy(parameters+[d], False)
+
+        E_m1 = self.energy(parameters+[-d], False)
+
+        E_p2 = self.energy(parameters+[2*d], False)
+
+        E_m2 = self.energy(parameters+[-2*d], False)
+
         self.added_operators.pop()
-        
-        # E(t) = c0 + c1*cos(t) + s1*sin(t) + c2*cos(2t) + s2*sin(2t)
-    
-        # s1 viene directo del rango amplio
-        s1 = (E_p2 - E_m2) / 2.0
-        
-        # E(pi/4) - E(-pi/4) = sqrt(2)*s1 + 2*s2
-        s2 = ((E_p4 - E_m4) / 2.0) - (s1 * np.sqrt(0.5))
-        
-        A = (E_p2 + E_m2) / 2.0   # A = c0 - c2
-        B = (E_p4 + E_m4) / 2.0   # B = c0 + c1/sqrt(2)
-        #  E0 = c0 + c1 + c2
-        
-        denom = 2 - np.sqrt(2)
-        c0 = (E0 + A - np.sqrt(2)*B) / denom
-        c1 = np.sqrt(2) * (B - c0)
-        c2 = c0 - A
+
+        # 2. Cálculo Analítico de Coeficientes (DFT Directa)
+        # Al ser equiespaciados, los coeficientes son proyecciones ortogonales.
+        # Factor de normalización 2/N (excepto c0 que es 1/N)
+        norm = 2.0 / 5.0
+
+        # Sumas auxiliares para aprovechar la simetría par/impar
+        sum_all = E0 + E_p1 + E_m1 + E_p2 + E_m2
+        diff_1 = E_p1 - E_m1
+        sum_1  = E_p1 + E_m1
+        diff_2 = E_p2 - E_m2
+        sum_2  = E_p2 + E_m2
+
+        c0 = sum_all / 5.0
+
+        # Proyección para frecuencia 1
+        c1 = norm * (E0 + sum_1 * cd + sum_2 * c2d)
+        s1 = norm * (diff_1 * sd + diff_2 * s2d)
+
+        # Proyección para frecuencia 2
+        # Nota matemática: cos(4d) = cos(d) y sin(4d) = -sin(d)
+        c2 = norm * (E0 + sum_1 * c2d + sum_2 * cd)
+        s2 = norm * (diff_1 * s2d - diff_2 * sd)
         
         
         def objective_function(theta_array):
@@ -759,6 +772,7 @@ class QP_Roto_Ansatz(Ansatz):
         
         parameters = self.parameters
         
+        self.energy_calls -= 1
         
         E0 = self.energy(parameters+[0], False)
         

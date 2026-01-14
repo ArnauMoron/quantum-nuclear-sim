@@ -172,10 +172,12 @@ class QP_Circuits_Composser():
         circ_plus_plus = main_circ.copy()
         circ_min_min = main_circ.copy()
         
-        circ_plus.add(gates.GIVENS(A, B, -np.pi/4))
-        circ_min.add(gates.GIVENS(A, B, np.pi/4))
-        circ_plus_plus.add(gates.GIVENS(A, B, -np.pi/2))
-        circ_min_min.add(gates.GIVENS(A, B, np.pi/2))
+        d = 0.4 * np.pi
+        
+        circ_plus.add(gates.GIVENS(A, B, -d))
+        circ_min.add(gates.GIVENS(A, B, d))
+        circ_plus_plus.add(gates.GIVENS(A, B, -2*d))
+        circ_min_min.add(gates.GIVENS(A, B, 2*d))
         
         
         circs_plus = self.Qibo_all_circuits(circ_plus)
@@ -189,6 +191,12 @@ class QP_Circuits_Composser():
         A = op_index[0]
         B = op_index[1]
         
+        d = 0.4 * np.pi 
+        cd = np.cos(d)
+        sd = np.sin(d)
+        c2d = np.cos(2*d)
+        s2d = np.sin(2*d)
+        
         circs_plus, circs_plus_plus, circs_min, circs_min_min = self.Qibo_gradient_circuits(A,B)
         
         with contextlib.redirect_stdout(self.f):
@@ -197,29 +205,33 @@ class QP_Circuits_Composser():
             
             E_p2 = self.Qibo_measure_Energy(circs_plus_plus, False)[0]
             
-            E_p4 = self.Qibo_measure_Energy(circs_plus, False)[0]
+            E_p1 = self.Qibo_measure_Energy(circs_plus, False)[0]
             
             E_m2 = self.Qibo_measure_Energy(circs_min_min, False)[0]
             
-            E_m4 = self.Qibo_measure_Energy(circs_min, False)[0]
+            E_m1 = self.Qibo_measure_Energy(circs_min, False)[0]
         
         # E(t) = c0 + c1*cos(t) + s1*sin(t) + c2*cos(2t) + s2*sin(2t)
     
-        # s1 viene directo del rango amplio
-        s1 = (E_p2 - E_m2) / 2.0
+        sum_1 = E_p1 + E_m1
+        dif_1 = E_p1 - E_m1
+        sum_2 = E_p2 + E_m2
+        dif_2 = E_p2 - E_m2
         
-        # E(pi/4) - E(-pi/4) = sqrt(2)*s1 + 2*s2
-        s2 = ((E_p4 - E_m4) / 2.0) - (s1 * np.sqrt(0.5))
+        # Factor de normalización de Fourier (2/N)
+        norm = 0.4 
         
-        A = (E_p2 + E_m2) / 2.0   # A = c0 - c2
-        B = (E_p4 + E_m4) / 2.0   # B = c0 + c1/sqrt(2)
-        #  E0 = c0 + c1 + c2
+        # Componente DC (Promedio simple)
+        c0 = (E0 + sum_1 + sum_2) / 5.0
         
-        denom = 2 - np.sqrt(2)
-        c0 = (E0 + A - np.sqrt(2)*B) / denom
-        c1 = np.sqrt(2) * (B - c0)
-        c2 = c0 - A
+        # Frecuencia fundamental (w)
+        c1 = norm * (E0 + sum_1 * cd + sum_2 * c2d)
+        s1 = norm * (dif_1 * sd + dif_2 * s2d)
         
+        # Segunda frecuencia (2w)
+        # Nota: cos(4d) = cos(d) y sin(4d) = -sin(d)
+        c2 = norm * (E0 + sum_1 * c2d + sum_2 * cd)
+        s2 = norm * (dif_1 * s2d - dif_2 * sd)
         
         def objective_function(theta_array):
             theta = theta_array[0] # L-BFGS espera arrays
