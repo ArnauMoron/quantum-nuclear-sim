@@ -4,6 +4,7 @@ import os
 
 from ADAPT_VQE.Nucleus import Nucleus
 
+
 class QuasiparticleOneBodyOperator():
     def __init__(self, A: int, g: float, matrix: np.ndarray) -> None:
         self.A = A
@@ -32,10 +33,11 @@ class QuasiparticleNucleus():
     derivation of coefficients from the raw Hamiltonian parameters.
     """
     
-    def __init__(self, nucleus: str, n_qubits: int = 6) -> None:
-        self.nucleus = Nucleus(nucleus, n_qubits=n_qubits)
+    def __init__(self, nucleus: str, shell='p') -> None:
+        self.nucleus = Nucleus(nucleus, shell = shell)
         self.name = nucleus
-        self.n_qubits = n_qubits
+        self.shell = shell
+        
         self.qp_mapping = self._build_qp_mapping()
         self.qp_states = self._build_qp_states()
         
@@ -64,7 +66,7 @@ class QuasiparticleNucleus():
             # --- CORRECCIÓN CRÍTICA ---
             # Si el índice del estado es mayor o igual a n_qubits, lo ignoramos.
             # Esto asegura que solo creemos pares dentro del espacio activo.
-            if i >= self.nucleus.n_qubits:
+            if i not in self.nucleus.qubits:
                 continue
             # ---------------------------
 
@@ -129,7 +131,7 @@ class QuasiparticleNucleus():
         for row in sp_data:
             idx = int(row[0])
             # Check if index is within qubit range
-            if idx < self.nucleus.n_qubits:
+            if idx in self.nucleus.qubits:
                 energies[idx] = float(row[-1])
         return energies
 

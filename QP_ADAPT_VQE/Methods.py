@@ -92,6 +92,15 @@ class QP_ADAPTVQE(VQE):
         super().__init__(test_threshold = test_threshold, method = method)
         self.ansatz = ansatz
         self.nucleus = ansatz.nucleus
+        
+        self.ofset = 0
+        
+        if self.nucleus.nucleus.qubits[0]!=0:
+            if self.nucleus.shell == 'p':
+                self.ofset = 0
+            elif self.nucleus.shell == 'sd':
+                self.ofset = 0
+        
         self.parameters = []
         self.max_layers = max_layers
 
@@ -182,7 +191,7 @@ class QP_ADAPTVQE(VQE):
                 break
             
             print(f"\n------------ LAYER {len(energy_layers)-1} ------------")
-            print('Operator:',self.ansatz.added_operators[-1].A, self.ansatz.added_operators[-1].B,', Gradient:', gradient_layers[-1])
+            print('Operator:',self.ansatz.added_operators[-1].A+self.ofset, self.ansatz.added_operators[-1].B+self.ofset,', Gradient:', gradient_layers[-1])
             print('Energy: ',energy_layers[-1])
             print('Rel. Error: ',rel_error_layers[-1])
             print('Theta:', self.parameters[-1])
@@ -191,7 +200,7 @@ class QP_ADAPTVQE(VQE):
         rel_error_layers.append(self.rel_error[-1])
 
         print(f"\n------------ LAYER {len(self.parameters)} ------------")
-        print('Operator:',self.ansatz.added_operators[-1].A, self.ansatz.added_operators[-1].B,', Gradient:', gradient_layers[-1])
+        print('Operator:',self.ansatz.added_operators[-1].A+self.ofset, self.ansatz.added_operators[-1].B+self.ofset,', Gradient:', gradient_layers[-1])
         print('Energy: ',energy_layers[-1])
         print('Rel. Error: ',rel_error_layers[-1])
         print('Theta:', self.parameters[-1])
@@ -199,7 +208,7 @@ class QP_ADAPTVQE(VQE):
        
         print("\nOperators used for each layer:")
         for i, op in enumerate(self.ansatz.added_operators):
-            print(f"Layer {i}: Operator {op.A}{op.B}, Theta = {self.parameters[i]}, Gradient = {gradient_layers[i]}")
+            print(f"Layer {i}: Operator {op.A+self.ofset},{op.B+self.ofset}, Theta = {self.parameters[i]}, Gradient = {gradient_layers[i]}")
             
 
 
@@ -239,9 +248,9 @@ def QP_ADAPT_minimization(nucleus: str,
                        opt_method: str = "L-BFGS-B",
                        threshold: float = 1e-6,
                        max_layers: int = 20,
-                       n_qubits: int = 6):
+                       shell: str = 'p'):
 
-    nuc = QuasiparticleNucleus(nucleus, n_qubits=n_qubits)
+    nuc = QuasiparticleNucleus(nucleus, shell=shell)
     ref_state = np.eye(nuc.d_H)[ref_state]
     
     ansatz = QP_ADAPTAnsatz(nucleus = nuc,
@@ -263,12 +272,12 @@ def QP_Quantum_ADAPT_minimization(nucleus: str,
                        ref_state: int = 0,
                        threshold: float = 1e-2,
                        max_layers: int = 20,
-                       n_qubits: int = 6, 
+                       shell: str = 'p', 
                        exact: bool = True,
                        nshots: int = 1000,
                        max_executions: int = 1000):
 
-    nuc = QuasiparticleNucleus(nucleus, n_qubits=n_qubits)
+    nuc = QuasiparticleNucleus(nucleus, shell = shell)
     
     ansatz = QP_QuantumADAPTAnsatz(nucleus = nuc,
                                  ref_state = ref_state,
@@ -319,6 +328,16 @@ class ADAPT_mixed_VQE(VQE):
         super().__init__(test_threshold = test_threshold, method = method)
         self.ansatz = ansatz
         self.nucleus = ansatz.nucleus
+        
+         
+        self.ofset = 0
+        
+        if self.nucleus.nucleus.qubits[0]!=0:
+            if self.nucleus.shell == 'p':
+                self.ofset = 0
+            elif self.nucleus.shell == 'sd':
+                self.ofset = 0
+                
         self.parameters = []
     
         
@@ -405,7 +424,7 @@ class ADAPT_mixed_VQE(VQE):
                 self.ansatz.minimum = True
                 break
             print(f"\n------------ LAYER {len(energy_layers)-1} ------------")
-            print('Operator:',self.ansatz.added_operators[-1].A,self.ansatz.added_operators[-1].B)
+            print('Operator:',self.ansatz.added_operators[-1].A+self.ofset,self.ansatz.added_operators[-1].B+self.ofset)
             print('Energy: ',energy_layers[-1])
             print('Rel. Error: ',rel_error_layers[-1])
             print('Theta:', self.parameters[-1])
@@ -413,21 +432,21 @@ class ADAPT_mixed_VQE(VQE):
         energy_layers.append(self.energy[-1])
         rel_error_layers.append(self.rel_error[-1])
         print(f"\n------------ LAYER {len(energy_layers)-1} ------------")
-        print('Operator:',self.ansatz.added_operators[-1].A,self.ansatz.added_operators[-1].B)
+        print('Operator:',self.ansatz.added_operators[-1].A+self.ofset,self.ansatz.added_operators[-1].B+self.ofset)
         print('Energy: ',energy_layers[-1])
         print('Rel. Error: ',rel_error_layers[-1])
-        print('New operator: ',self.ansatz.added_operators[-1].A, self.ansatz.added_operators[-1].B,'    Theta:', self.parameters[-1])
+        print('New operator: ',self.ansatz.added_operators[-1].A+self.ofset, self.ansatz.added_operators[-1].B+self.ofset,'    Theta:', self.parameters[-1])
            
         print("\nOperators used for each layer:")
         
         for i in range(len(self.parameters)):
-            print(f"Layer {i+1}: Operator {self.ansatz.added_operators[i].A}{self.ansatz.added_operators[i].B}, Theta = {self.parameters[i]}")
+            print(f"Layer {i+1}: Operator {self.ansatz.added_operators[i].A+self.ofset}{self.ansatz.added_operators[i].B+self.ofset}, Theta = {self.parameters[i]}")
 
         print(f'\n Final energy result: {energy_layers[-1]}\t', f'Final relative error is {self.rel_error[-1]}' )
 
         
         data={'parameters':self.parameters,
-            'used_operators':[[op.A,op.B] for op in self.ansatz.added_operators],
+            'used_operators':[[op.A+self.ofset,op.B+self.ofset] for op in self.ansatz.added_operators],
             'operator_pool':self.ansatz.operator_pool,
             'Energy': energy_layers[-1]}
             
@@ -509,14 +528,20 @@ class QP_Roto_ADAPTVQE(VQE):
         super().__init__(test_threshold = test_threshold, method = method)
         self.ansatz = ansatz
         self.nucleus = ansatz.nucleus
+         
+        self.ofset = 0
+        
+        if self.nucleus.nucleus.qubits[0]!=0:
+            if self.nucleus.shell == 'p':
+                self.ofset = 0
+            elif self.nucleus.shell == 'sd':
+                self.ofset = 0
+                
         self.parameters = []
         self.max_layers = max_layers
 
-        try:
-            self.conv_criterion = conv_criterion
-        except conv_criterion not in ['Repeated op', 'Gradient','None']:
-            print('Invalid minimum criterion. Choose between "Repeated op", "Gradient" and "None"')
-            exit()
+        
+        self.conv_criterion = conv_criterion
     
     def run(self) -> tuple:
         """
@@ -538,12 +563,12 @@ class QP_Roto_ADAPTVQE(VQE):
 
         
 
-        E0 = self.ansatz.energy(self.parameters)
-        self.energy.append(E0)
+        E0 = self.ansatz.energy(self.parameters, save_ansatz = True)
+        
         rel_error = (abs((E0 - self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0]))
-
+        self.ansatz.set_optimized_state([], E0)
         print('Initial Energy: ',E0)
-        self.ansatz.parameters=[]
+        
         next_operator, min_energy, best_parameter = self.ansatz.choose_operator()
 
         energy_layers = [E0]
@@ -554,7 +579,8 @@ class QP_Roto_ADAPTVQE(VQE):
         while self.ansatz.minimum == False and len(self.ansatz.added_operators)<self.max_layers:
             self.ansatz.added_operators.append(next_operator)
             self.parameters.append(best_parameter)
-            current_layer_params = self.ansatz.parameters + [best_parameter]           
+            current_layer_params = self.parameters  
+            min_energy = self.ansatz.energy(current_layer_params, save_ansatz=True)         
             
             current_layer_energy = min_energy
             rel_error = (abs((current_layer_energy- self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0]))
@@ -570,13 +596,13 @@ class QP_Roto_ADAPTVQE(VQE):
                                     options=self.options)
                     self.parameters = list(result.x)
                     
-                    current_layer_params = list(result.x)
-                    current_layer_energy = result.fun
+                    current_layer_energy = self.ansatz.global_best_energy
+                    current_layer_params = self.ansatz.global_best_params
+                    
                     energy_layers.append(current_layer_energy)
                     rel_error_layers.append(rel_error)
                     
     
-                self.ansatz.parameters = self.parameters
                 
                 if len(self.ansatz.added_operators) < self.max_layers:
                     
@@ -592,9 +618,10 @@ class QP_Roto_ADAPTVQE(VQE):
 
                 
             except OptimizationConvergedException:
-                current_layer_params = self.parameters
-                current_layer_energy = self.energy[-1]
+                current_layer_energy = self.ansatz.global_best_energy
+                current_layer_params = self.ansatz.global_best_params
                 energy_layers.append(current_layer_energy)
+                self.ansatz.set_optimized_state(current_layer_params, current_layer_energy)
                 rel_error_layers.append(rel_error)
                  
                 pass
@@ -615,23 +642,23 @@ class QP_Roto_ADAPTVQE(VQE):
                 break
             
             print(f"\n------------ LAYER {len(self.parameters)} ------------")
-            print('Operator:',self.ansatz.added_operators[-1].A,self.ansatz.added_operators[-1].B)
+            print('Operator:',self.ansatz.added_operators[-1].A+self.ofset,self.ansatz.added_operators[-1].B+self.ofset)
             print('Energy: ',energy_layers[-1])
             print('Rel. Error: ',rel_error)
-            print('Theta:', self.parameters[-1])
+            print('Theta:', self.parameters)
             
         
 
         print(f"\n------------ LAYER {len(self.parameters)} ------------")
-        print('Operator:',self.ansatz.added_operators[-1].A,self.ansatz.added_operators[-1].B)
+        print('Operator:',self.ansatz.added_operators[-1].A+self.ofset,self.ansatz.added_operators[-1].B+self.ofset)
         print('Energy: ',current_layer_energy)
         print('Rel. Error: ',rel_error_layers[-1])
-        print('Theta:', current_layer_params[-1])
+        print('Theta:', self.parameters)
     
        
         print("\nOperators used for each layer:")
         for i, op in enumerate(self.ansatz.added_operators):
-            print(f"Layer {i}: Operator {op.A}{op.B}, Theta = {self.parameters[i]}")
+            print(f"Layer {i}: Operator {op.A+self.ofset},{op.B+self.ofset}, Theta = {self.parameters[i]}")
             
 
 
@@ -646,7 +673,8 @@ class QP_Roto_ADAPTVQE(VQE):
         data={'parameters':self.parameters,
             'used_operators':[op for op in self.ansatz.added_operators],
             'operator_pool':self.ansatz.operator_pool,
-            'Energy': energy_layers[-1]}
+            'Energy': energy_layers,
+            'n_measurements':self.ansatz.energy_calls}
         
         return data
         
@@ -655,11 +683,11 @@ class QP_Roto_ADAPTVQE(VQE):
         Callback function to store the energy and parameters at each iteration and stop the optimization if the threshold is reached.
         """
        
-        E = self.ansatz.last_energy
+        E = self.ansatz.global_best_energy
         
-        self.energy.append(E)
+        
         rel_error = abs((E - self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0])
-        self.parameters = params
+        
         
         if rel_error < self.test_threshold:
             self.success = True
@@ -671,9 +699,9 @@ def QP_Roto_ADAPT_minimization(nucleus: str,
                        opt_method: str = "COBYLA",
                        threshold: float = 1e-2,
                        max_layers: int = 20,
-                       n_qubits: int = 6):
+                       shell: str = 'p'):
 
-    nuc = QuasiparticleNucleus(nucleus, n_qubits=n_qubits)
+    nuc = QuasiparticleNucleus(nucleus, shell = shell)
     ref_state = np.eye(nuc.d_H)[ref_state]
     
     ansatz = QP_Roto_ADAPT_Ansatz(nucleus = nuc,
@@ -695,12 +723,12 @@ def QP_Quantum_Roto_ADAPT_minimization(nucleus: str,
                        ref_state: int = 0,
                        threshold: float = 1e-2,
                        max_layers: int = 20,
-                       n_qubits: int = 6, 
+                       shell: str = 'p', 
                        exact: bool = True,
                        nshots: int = 1000,
                        max_executions: int = 1000):
 
-    nuc = QuasiparticleNucleus(nucleus, n_qubits=n_qubits)
+    nuc = QuasiparticleNucleus(nucleus, shell=shell)
     
     ansatz = QP_Quantum_Roto_ADAPTAnsatz(nucleus = nuc,
                                  ref_state = ref_state,
@@ -735,7 +763,6 @@ class QP_Roto_VQE(VQE):
     
     Methods:
         run: Runs the ADAPT VQE algorithm.
-        callback: Callback function to store the energy and parameters at each iteration and stop the optimization if the threshold is
     """
     def __init__(self, 
                  ansatz: QP_Roto_Ansatz,
@@ -747,6 +774,16 @@ class QP_Roto_VQE(VQE):
         super().__init__(test_threshold = test_threshold, method = method)
         self.ansatz = ansatz
         self.nucleus = ansatz.nucleus
+        
+         
+        self.ofset = 0
+        
+        if self.nucleus.nucleus.qubits[0]!=0:
+            if self.nucleus.shell == 'p':
+                self.ofset = 0
+            elif self.nucleus.shell == 'sd':
+                self.ofset = 0
+                
         self.parameters = []
         self.max_layers = max_layers
 
@@ -776,13 +813,12 @@ class QP_Roto_VQE(VQE):
 
         
 
-        E0 = self.ansatz.energy(self.parameters)
+        E0 = self.ansatz.energy(self.parameters, save_ansatz = True)
         self.energy.append(E0)
         rel_error = (abs((E0 - self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0]))
 
         self.ansatz.set_optimized_state([], E0)
         print('Initial Energy: ',E0)
-        self.ansatz.parameters=[]
         next_operator, min_energy, best_parameter = self.ansatz.choose_operator()
         
 
@@ -792,34 +828,32 @@ class QP_Roto_VQE(VQE):
         max_ex = False
         
         while self.ansatz.minimum == False and len(self.ansatz.added_operators)<self.max_layers:
+            
             self.ansatz.added_operators.append(next_operator)
             self.parameters.append(best_parameter)
-            current_layer_params = self.ansatz.parameters + [best_parameter]           
+            
+            current_layer_params = self.parameters    
+                 
+            min_energy = self.ansatz.energy(current_layer_params, save_ansatz=True)
+
             
             current_layer_energy = min_energy
-            rel_error = (abs((current_layer_energy- self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0]))
+            rel_error = (abs((current_layer_energy - self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0]))
+            
             self.ansatz.set_optimized_state(current_layer_params, current_layer_energy)
-            
+            print(current_layer_energy, current_layer_params)
                     
-            
-                    
-    
-            self.ansatz.parameters = self.parameters
+                
                 
             if len(self.ansatz.added_operators) < self.max_layers:
                 
                 next_operator, min_energy, best_parameter = self.ansatz.choose_operator()
-                print(min_energy)
                 
-                
-                if next_operator == self.ansatz.added_operators[-1]:
+                if abs(energy_layers[-1]-min_energy) < self.test_threshold:
                     self.ansatz.minimum = True
                     energy_layers.append(current_layer_energy)
                     rel_error_layers.append(rel_error)
-                elif abs(energy_layers[-1]-min_energy) < self.test_threshold:
-                    self.ansatz.minimum = True
-                    energy_layers.append(current_layer_energy)
-                    rel_error_layers.append(rel_error)
+                    
                 else:
                     energy_layers.append(current_layer_energy)
                     rel_error_layers.append(rel_error)
@@ -830,6 +864,7 @@ class QP_Roto_VQE(VQE):
             
         
             if rel_error < self.test_threshold or len(self.parameters) == self.max_layers or max_ex==True:
+                
                 energy_layers.append(current_layer_energy)
                 rel_error_layers.append(rel_error)
                 self.success = True
@@ -837,7 +872,7 @@ class QP_Roto_VQE(VQE):
                 break
             
             print(f"\n------------ LAYER {len(self.parameters)} ------------")
-            print('Operator:',self.ansatz.added_operators[-1].A,self.ansatz.added_operators[-1].B)
+            print('Operator:',self.ansatz.added_operators[-1].A+self.ofset,self.ansatz.added_operators[-1].B+self.ofset)
             print('Energy: ',energy_layers[-1])
             print('Rel. Error: ',rel_error)
             print('Theta:', self.parameters[-1])
@@ -845,7 +880,7 @@ class QP_Roto_VQE(VQE):
         
 
         print(f"\n------------ LAYER {len(self.parameters)} ------------")
-        print('Operator:',self.ansatz.added_operators[-1].A,self.ansatz.added_operators[-1].B)
+        print('Operator:',self.ansatz.added_operators[-1].A+self.ofset,self.ansatz.added_operators[-1].B+self.ofset)
         print('Energy: ',current_layer_energy)
         print('Rel. Error: ',rel_error_layers[-1])
         print('Theta:', current_layer_params[-1])
@@ -853,7 +888,7 @@ class QP_Roto_VQE(VQE):
        
         print("\nOperators used for each layer:")
         for i, op in enumerate(self.ansatz.added_operators):
-            print(f"Layer {i}: Operator {op.A}{op.B}, Theta = {self.parameters[i]}")
+            print(f"Layer {i}: Operator {op.A+self.ofset},{op.B+self.ofset}, Theta = {self.parameters[i]}")
             
 
 
@@ -868,34 +903,19 @@ class QP_Roto_VQE(VQE):
         data={'parameters':self.parameters,
             'used_operators':[op for op in self.ansatz.added_operators],
             'operator_pool':self.ansatz.operator_pool,
-            'Energy': energy_layers[-1]}
+            'Energy': energy_layers[-1],
+            'n_measurements': self.ansatz.energy_calls}
         
         return data
-        
-    def callback(self, params: list) -> None:
-        """
-        Callback function to store the energy and parameters at each iteration and stop the optimization if the threshold is reached.
-        """
-       
-        E = self.ansatz.last_energy
-        
-        self.energy.append(E)
-        rel_error = abs((E - self.ansatz.nucleus.eig_val[0])/self.ansatz.nucleus.eig_val[0])
-        self.parameters = params
-        
-        if rel_error < self.test_threshold:
-            self.success = True
-            self.ansatz.minimum = True
-            raise OptimizationConvergedException
-
+           
 def QP_Roto_minimization(nucleus: str,
                        ref_state: int = 0,
                        opt_method: str = "COBYLA",
                        threshold: float = 1e-2,
                        max_layers: int = 20,
-                       n_qubits: int = 6):
+                       shell:str = 'p'):
 
-    nuc = QuasiparticleNucleus(nucleus, n_qubits=n_qubits)
+    nuc = QuasiparticleNucleus(nucleus, shell= shell)
     ref_state = np.eye(nuc.d_H)[ref_state]
     
     ansatz = QP_Roto_Ansatz(nucleus = nuc,
@@ -917,12 +937,12 @@ def QP_Quantum_Roto_minimization(nucleus: str,
                        ref_state: int = 0,
                        threshold: float = 1e-2,
                        max_layers: int = 20,
-                       n_qubits: int = 6, 
+                       shell:str = 'p', 
                        exact: bool = True,
                        nshots: int = 1000,
                        max_executions: int = 1000):
 
-    nuc = QuasiparticleNucleus(nucleus, n_qubits=n_qubits)
+    nuc = QuasiparticleNucleus(nucleus, shell=shell)
     
     ansatz = QP_Quantum_Roto_Ansatz(nucleus = nuc,
                                  ref_state = ref_state,

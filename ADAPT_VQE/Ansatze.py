@@ -190,7 +190,7 @@ class QuantumADAPTAnsatz(Ansatz):
         self.energy_calls=0
         
         self.composer = Circuits_Composser(nucleus=self.nucleus.name,
-                                            n_qubits=self.nucleus.n_qubits,
+                                            shell=self.nucleus.shell,
                                             ref_state=self.ref_state,
                                             parameters=[],
                                             operators_used=[],
@@ -292,7 +292,7 @@ class ADAPT_mixed_Ansatz(Ansatz):
         self.ref_state = ref_state
         
         self.composer = Circuits_Composser(nucleus = self.nucleus.name,
-                                  n_qubits = self.nucleus.n_qubits,
+                                  shell = self.nucleus.shell,
                                   ref_state = self.ref_state,
                                   parameters = [],
                                   operators_used = self.added_operators,
@@ -334,3 +334,5 @@ class ADAPT_mixed_Ansatz(Ansatz):
     def choose_operator(self):
         i=self.capas
         return self.data['used_operators'][i]
+    
+    

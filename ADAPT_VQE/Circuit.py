@@ -22,7 +22,7 @@ class Circuits_Composser():
     
     def __init__(self,
                  nucleus:str='Be6',
-                 n_qubits:int = 6,
+                 shell = 'p',
                  ref_state:int = 0,
                  parameters:list=[],
                  operators_used: list=[],
@@ -32,7 +32,8 @@ class Circuits_Composser():
         
         self.exact = exact
         self.nshots = nshots
-        nuc = Nucleus(nucleus, n_qubits=n_qubits)
+        nuc = Nucleus(nucleus, shell = shell)
+        
         self.nuc = nuc
         ham = nuc.Ham_2_body_contributions()
         operator_pool = nuc.operators
@@ -48,7 +49,7 @@ class Circuits_Composser():
        
         self.monoparticular_energies = monoparticular
         
-        self.n_qubits = n_qubits
+        self.n_qubits = 6
         self.operator_pool = operator_pool
         self.two_index = two_index
         self.operators_used = operators_used
@@ -176,7 +177,6 @@ class Circuits_Composser():
         return circuit
 
     def qibo_3_dif_index(self, j, k):
-        qubits = list(range(self.n_qubits))
         circuit = Circuit(self.n_qubits)
 
         circuit.add(gates.CNOT(k, j))
@@ -186,7 +186,6 @@ class Circuits_Composser():
         return circuit
 
     def qibo_4_dif_index(self, operator_index):
-        qubits = list(range(self.n_qubits))
         circuit = Circuit(self.n_qubits)
         i, j, k, l = operator_index
 
@@ -370,6 +369,7 @@ class Circuits_Composser():
         obs=[]
         i, j, k, l = ijkl
         
+        
         for m in range(i+1, j):
             if m < k or m > l: 
                 obs.append(m)
@@ -453,6 +453,7 @@ class Circuits_Composser():
                 
                 op_amplitude = (Qibo_circs[i][1])
                 op_index = Qibo_circs[i][2]     
+                
                 
                 indices = self.obs_P(op_index)
                 
@@ -553,67 +554,6 @@ class Circuits_Composser():
             gradient=gradient+(en1-en2)*circs[2]
 
         return gradient
-
-    def build_confusion_matrix(self, counts_0, counts_1):
-        """
-        Construye la matriz de confusión global a partir de mediciones
-        en los estados |0> y |1>.
-
-        counts_0 : dict
-            Cuentas con preparación en |0>.
-        counts_1 : dict
-            Cuentas con preparación en |1>.
-
-        Devuelve
-        -------
-        M : np.ndarray
-            Matriz de confusión global (2^n x 2^n).
-        """
-        n_qubits = self.n_qubits
-        N0 = sum(counts_0.values())
-        N1 = sum(counts_1.values())
-
-        def confusion_matrix(q):
-            p00 = sum(c for s,c in counts_0.items() if s[q]=='0') / N0
-            p01 = sum(c for s,c in counts_0.items() if s[q]=='1') / N0
-            p10 = sum(c for s,c in counts_1.items() if s[q]=='0') / N1
-            p11 = sum(c for s,c in counts_1.items() if s[q]=='1') / N1
-            eta1 = (p00 - p10) / 2
-            eta0 = (p01 + p11) / 2
-            return np.array([[1-eta0+eta1, 1-eta0-eta1],
-                            [eta0-eta1,     eta0+eta1]])
-
-        M = 1
-        for q in range(n_qubits):
-            M = np.kron(M, confusion_matrix(q))
-
-        self.confusion_matrix = M
-    
-    def correct_counts(self, counts_measured):
-        """
-        Corrige cuentas medidas usando la matriz de confusión M.
-
-        counts_measured : dict
-            Cuentas medidas en el experimento real.
-        M : np.ndarray
-            Matriz de confusión global (2^n x 2^n).
-
-        Devuelve
-        -------
-        corrected_counts : dict
-            Cuentas corregidas.
-        """
-        n_qubits = len(next(iter(counts_measured)))
-        states = ["".join(bits) for bits in product("01", repeat=n_qubits)]
-        Nshots = sum(counts_measured.values())
-        p_meas = np.array([counts_measured.get(s,0)/Nshots for s in states])
-
-        p_true = np.linalg.solve(self.confusion_matrix, p_meas)
-        p_true = np.clip(p_true, 0, None)
-        p_true /= p_true.sum()
-
-        corrected_counts = {s: int(round(p*Nshots)) for s,p in zip(states, p_true) if p > 1e-6}
-        return corrected_counts
 
     def Qibo_measure_energy_no_diagonalization_4_index(self, circuits=None):
         
@@ -827,6 +767,6 @@ class Circuits_Composser():
             circuits.append(circuits_3[key])
 
         return circuits
-   
+    
    
         

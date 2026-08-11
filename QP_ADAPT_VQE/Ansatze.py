@@ -191,7 +191,7 @@ class QP_QuantumADAPTAnsatz(Ansatz):
         self.energy_calls=0
         
         self.composer = QP_Circuits_Composser(nucleus=self.nucleus.name,
-                                            n_qubits=self.nucleus.n_qubits,
+                                            shell=self.nucleus.shell,
                                             ref_state=self.ref_state,
                                             parameters=[],
                                             operators_used=[],
@@ -289,7 +289,7 @@ class QP_ADAPT_mixed_Ansatz(Ansatz):
         self.ref_state = ref_state
         
         self.composer = QP_Circuits_Composser(nucleus = self.nucleus.name,
-                                  n_qubits = self.nucleus.n_qubits,
+                                  shell=self.nucleus.shell,
                                   ref_state = self.ref_state,
                                   parameters = [],
                                   operators_used = self.added_operators,
@@ -366,6 +366,8 @@ class QP_Roto_ADAPT_Ansatz(Ansatz):
         self.minimum = False
         
         self.energy_calls=0
+        self.global_best_energy = float('inf')
+        self.global_best_params = []
 
     def build_ansatz(self, parameters: list) -> np.ndarray:
         """
@@ -383,7 +385,7 @@ class QP_Roto_ADAPT_Ansatz(Ansatz):
             ansatz = expm_multiply(-parameters[i]*op.op_matrix, ansatz, traceA = 0.0)
         return ansatz
 
-    def energy(self, parameters: list, save_energy=True) -> float:
+    def energy(self, parameters: list, save_ansatz=False) -> float:
         """
         Returns the energy of the ansatz on a given VQE iteration.
 
@@ -402,13 +404,18 @@ class QP_Roto_ADAPT_Ansatz(Ansatz):
                 self.fcalls += 1
             new_ansatz = self.build_ansatz(parameters)
             E = new_ansatz.conj().T.dot(self.nucleus.H.dot(new_ansatz))
-            if save_energy == True:
-                self.last_energy = E
+            self.last_energy = E
+            
+            if E < self.global_best_energy:
+                self.global_best_energy = E
+                self.global_best_params = parameters
             return E
         else:
             E = self.ansatz.conj().T.dot(self.nucleus.H.dot(self.ansatz))
-            if save_energy == True:
-                self.last_energy = E
+            self.last_energy = E
+            if E < self.global_best_energy:
+                self.global_best_energy = E
+                self.global_best_params = parameters
             return E    
         
     def find_min(self, op):
@@ -425,15 +432,15 @@ class QP_Roto_ADAPT_Ansatz(Ansatz):
         c2d = np.cos(2*d)
         s2d = np.sin(2*d)
 
-        E0 = self.energy(parameters+[0], False)
+        E0 = self.energy(parameters+[0])
 
-        E_p1 = self.energy(parameters+[d], False)
+        E_p1 = self.energy(parameters+[d])
 
-        E_m1 = self.energy(parameters+[-d], False)
+        E_m1 = self.energy(parameters+[-d])
 
-        E_p2 = self.energy(parameters+[2*d], False)
+        E_p2 = self.energy(parameters+[2*d])
 
-        E_m2 = self.energy(parameters+[-2*d], False)
+        E_m2 = self.energy(parameters+[-2*d])
 
         self.added_operators.pop()
 
@@ -533,7 +540,7 @@ class QP_Roto_ADAPT_Ansatz(Ansatz):
         óptimos encontrados por el optimizador, sin realizar nuevas mediciones.
         """
         # Actualizamos parámetros cacheados
-        self.cached_parameters = parameters
+        
         self.parameters = parameters
         
         # INYECCIÓN DIRECTA DE ENERGÍA (¡Sin coste!)
@@ -583,9 +590,11 @@ class QP_Quantum_Roto_ADAPTAnsatz(Ansatz):
         self.max_executions=max_executions
         self.f = io.StringIO()
         self.energy_calls=0
+        self.global_best_energy = float('inf')
+        self.global_best_params = []
         
         self.composer = QP_Circuits_Composser(nucleus=self.nucleus.name,
-                                            n_qubits=self.nucleus.n_qubits,
+                                            shell=self.nucleus.shell,
                                             ref_state=self.ref_state,
                                             parameters=[],
                                             operators_used=[],
@@ -594,7 +603,7 @@ class QP_Quantum_Roto_ADAPTAnsatz(Ansatz):
 
         
         
-    def energy(self, parameters: list) -> float:
+    def energy(self, parameters: list, save_ansatz = False) -> float:
         """
         Returns the energy of the ansatz on a given VQE iteration.
 
@@ -604,23 +613,6 @@ class QP_Quantum_Roto_ADAPTAnsatz(Ansatz):
         Returns:
             float: Energy of the ansatz.
         """
-        
-        
-        # if hasattr(self, 'cached_parameters') and np.allclose(parameters, self.cached_parameters):
-        #     # Si son iguales, devolvemos la energía guardada sin recalcular
-        #     if self.energy_calls>self.max_executions:
-        #         self.energy_calls = self.max_executions
-        #         raise RuntimeError
-            
-        #     # with open('debug.txt', 'a') as f:
-        #     #     f.write(str(parameters))
-            
-        #     self.composer.parameters=parameters
-        #     self.composer.operators_used=self.added_operators
-            
-        #     self.cached_parameters = parameters 
-            
-        #     return self.composer.E0
         
         
         self.energy_calls+=1
@@ -633,11 +625,19 @@ class QP_Quantum_Roto_ADAPTAnsatz(Ansatz):
         self.composer.operators_used=self.added_operators
         
         with contextlib.redirect_stdout(self.f):
-            E = self.composer.Qibo_measure_Energy()[0]
-            
+            energy_meas = self.composer.Qibo_measure_Energy()
+            E = energy_meas[0]
+        
+        if E < self.global_best_energy:
+                self.global_best_energy = E
+                self.global_best_params = parameters
+        
         self.last_energy = E
         
         self.cached_parameters = parameters
+        
+        if save_ansatz:
+            self.ansatz = energy_meas[-1] 
         
         return E
 
@@ -649,16 +649,21 @@ class QP_Quantum_Roto_ADAPTAnsatz(Ansatz):
             TwoBodyExcitationOperator: Next operator.
             float: Gradient of the next operator.
         """
-        self.energy_calls += 4*len(self.nucleus.ops_hop)
         
         min_energies = []
         best_parameters = []
         
         for op in self.operator_pool:
-            par, en = self.composer.Qibo_find_min([op.A, op.B])
-            
-            best_parameters.append(par)
-            min_energies.append(en)
+            if ((len(self.added_operators)==0 or (op.A != self.added_operators[-1].A or op.B != self.added_operators[-1].B)) 
+                and not (self.ansatz.probabilities([op.A, op.B])[0] > 0.99999 or self.ansatz.probabilities([op.A, op.B])[3] > 0.99999)):
+                self.energy_calls += 4
+                par, en = self.composer.Qibo_find_min([op.A, op.B])
+                best_parameters.append(par)
+                min_energies.append(en)
+            else:
+                best_parameters.append(0)
+                min_energies.append(100)
+                
             
         min_energy = min(min_energies)
         self.last_energy = min_energy
@@ -738,7 +743,7 @@ class QP_Roto_Ansatz(Ansatz):
             ansatz = expm_multiply(-parameters[i]*op.op_matrix, ansatz, traceA = 0.0)
         return ansatz
 
-    def energy(self, parameters: list, save_energy=True) -> float:
+    def energy(self, parameters: list, save_ansatz = False) -> float:
         """
         Returns the energy of the ansatz on a given VQE iteration.
 
@@ -757,13 +762,11 @@ class QP_Roto_Ansatz(Ansatz):
                 self.fcalls += 1
             new_ansatz = self.build_ansatz(parameters)
             E = new_ansatz.conj().T.dot(self.nucleus.H.dot(new_ansatz))
-            if save_energy == True:
-                self.last_energy = E
+        
             return E
         else:
             E = self.ansatz.conj().T.dot(self.nucleus.H.dot(self.ansatz))
-            if save_energy == True:
-                self.last_energy = E
+           
             return E    
         
     def find_min(self, op):
@@ -774,15 +777,15 @@ class QP_Roto_Ansatz(Ansatz):
         
         self.energy_calls -= 1
         
-        E0 = self.energy(parameters+[0], False)
+        E0 = self.energy(parameters+[0])
         
-        E_p2 = self.energy(parameters+[np.pi/2], False)
+        E_p2 = self.energy(parameters+[np.pi/2])
             
-        E_p4 = self.energy(parameters+[np.pi/4], False)
+        E_p4 = self.energy(parameters+[np.pi/4])
             
-        E_m2 = self.energy(parameters+[-np.pi/2], False)
+        E_m2 = self.energy(parameters+[-np.pi/2])
             
-        E_m4 = self.energy(parameters+[-np.pi/4], False)
+        E_m4 = self.energy(parameters+[-np.pi/4])
         
         self.added_operators.pop()
         
@@ -803,6 +806,7 @@ class QP_Roto_Ansatz(Ansatz):
         c1 = np.sqrt(2) * (B - c0)
         c2 = c0 - A
         
+        #print(op.A, op.B, c0, c1, s1, c2, s2)
         
         def objective_function(theta_array):
             theta = theta_array[0] # L-BFGS espera arrays
@@ -858,10 +862,14 @@ class QP_Roto_Ansatz(Ansatz):
         best_parameters = []
         
         for op in self.operator_pool:
-            par, en = self.find_min(op)
-            
-            best_parameters.append(par)
-            min_energies.append(en)
+            if not self.added_operators or not (op.A == self.added_operators[-1].A and op.B == self.added_operators[-1].B):
+                par, en = self.find_min(op)
+                
+                best_parameters.append(par)
+                min_energies.append(en)
+            else:
+                best_parameters.append(0)
+                min_energies.append(100)
             
         min_energy = min(min_energies)
         
@@ -876,11 +884,10 @@ class QP_Roto_Ansatz(Ansatz):
         óptimos encontrados por el optimizador, sin realizar nuevas mediciones.
         """
         # Actualizamos parámetros cacheados
-        self.cached_parameters = parameters
+
         self.parameters = parameters
         
-        # INYECCIÓN DIRECTA DE ENERGÍA (¡Sin coste!)
-        self.last_energy = energy      
+    
             
 class QP_Quantum_Roto_Ansatz(Ansatz):
     """
@@ -928,7 +935,7 @@ class QP_Quantum_Roto_Ansatz(Ansatz):
         self.energy_calls=0
         
         self.composer = QP_Circuits_Composser(nucleus=self.nucleus.name,
-                                            n_qubits=self.nucleus.n_qubits,
+                                            shell=self.nucleus.shell,
                                             ref_state=self.ref_state,
                                             parameters=[],
                                             operators_used=[],
@@ -937,7 +944,7 @@ class QP_Quantum_Roto_Ansatz(Ansatz):
 
         
         
-    def energy(self, parameters: list) -> float:
+    def energy(self, parameters: list, save_ansatz = False) -> float:
         """
         Returns the energy of the ansatz on a given VQE iteration.
 
@@ -955,11 +962,17 @@ class QP_Quantum_Roto_Ansatz(Ansatz):
             self.energy_calls = self.max_executions
             raise RuntimeError
         
-        self.composer.parameters=parameters
-        self.composer.operators_used=self.added_operators
+        self.composer.parameters = parameters 
+        self.composer.operators_used = self.added_operators
+        
+      
         
         with contextlib.redirect_stdout(self.f):
-            E = self.composer.Qibo_measure_Energy()[0]
+            energy_meas = self.composer.Qibo_measure_Energy()
+            E = energy_meas[0]
+            
+            if save_ansatz:
+                self.ansatz = energy_meas[-1] 
             
         self.last_energy = E
         
@@ -974,12 +987,11 @@ class QP_Quantum_Roto_Ansatz(Ansatz):
         óptimos encontrados por el optimizador, sin realizar nuevas mediciones.
         """
         # Actualizamos parámetros cacheados
-        self.cached_parameters = parameters
+
         self.composer.parameters = parameters
         self.composer.operators_used = self.added_operators
         
-        # INYECCIÓN DIRECTA DE ENERGÍA (¡Sin coste!)
-        self.last_energy = energy
+
         self.composer.E0 = energy
         
         
@@ -991,16 +1003,24 @@ class QP_Quantum_Roto_Ansatz(Ansatz):
             TwoBodyExcitationOperator: Next operator.
             float: Gradient of the next operator.
         """
-        self.energy_calls += 4*len(self.nucleus.ops_hop)
+        
         
         min_energies = []
         best_parameters = []
         
         for op in self.operator_pool:
-            par, en = self.composer.Qibo_find_min([op.A, op.B])
+            if ((len(self.added_operators)==0 or (op.A != self.added_operators[-1].A or op.B != self.added_operators[-1].B)) 
+                and not (self.ansatz.probabilities([op.A, op.B])[0] > 0.999 or self.ansatz.probabilities([op.A, op.B])[3] > 0.999)):
             
-            best_parameters.append(par)
-            min_energies.append(en)
+                self.energy_calls += 4
+                par, en = self.composer.Qibo_find_min([op.A, op.B])
+                best_parameters.append(par)
+                min_energies.append(en)
+                
+            else:              
+                
+                best_parameters.append(0)
+                min_energies.append(100)
             
         min_energy = min(min_energies)
         self.last_energy = min_energy

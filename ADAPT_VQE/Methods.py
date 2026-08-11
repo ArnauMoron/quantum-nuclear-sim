@@ -155,9 +155,7 @@ class ADAPTVQE(VQE):
                 if len(self.ansatz.added_operators) < self.max_layers:
                     
                     next_operator, next_gradient = self.ansatz.choose_operator()
-                    
-                    sign = np.sign(next_gradient)
-                    
+                                       
                         
                     if next_operator == self.ansatz.added_operators[-1]:
                         self.ansatz.minimum = True
@@ -243,10 +241,10 @@ def ADAPT_minimization(nucleus: str,
                        opt_method: str = "L-BFGS-B",
                        threshold: float = 1e-6,
                        max_layers: int = 20,
-                       n_qubits: int = 6):
+                       shell:str = 'p'):
 
     ref_state_dict = {'ref_state':ref_state}
-    nuc = Nucleus(nucleus, n_qubits=n_qubits)
+    nuc = Nucleus(nucleus, shell = shell)
     ref_state = np.eye(nuc.d_H)[ref_state]
     
     ansatz = ADAPTAnsatz(nucleus = nuc,
@@ -300,13 +298,13 @@ def Quantum_ADAPT_minimization(nucleus: str,
                        ref_state: int = 0,
                        threshold: float = 1e-2,
                        max_layers: int = 20,
-                       n_qubits: int = 6, 
+                       shell: str = 'p', 
                        exact: bool = True,
                        nshots: int = 1000,
                        max_executions: int = 1000):
 
     ref_state_dict = {'ref_state':ref_state}
-    nuc = Nucleus(nucleus, n_qubits=n_qubits)
+    nuc = Nucleus(nucleus, shell=shell)
     
     ansatz = QuantumADAPTAnsatz(nucleus = nuc,
                                  ref_state = ref_state,
